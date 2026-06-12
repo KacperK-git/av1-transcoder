@@ -263,10 +263,22 @@ def get_mp4box_tracks(video_path, verbose=False):
     return tracks
 
 
-def encode_av1(input_path, output_path, cq, probe, content_type,
-               verbose=False, position=None, hw_encoder=None):
+def encode_av1(input_path, output_path, cq, probe,
+               content_type,
+               fps=None,
+               verbose=False,
+               position=None,
+               hw_encoder=None):
     total_seconds = float(probe.get("format", {}).get("duration", 0))
     color_args = get_color_args(probe)
+
+    video_filter = None
+
+    if fps is not None:
+        video_filter = f"fps={fps}"
+        # video_filter = f"framerate=fps={fps}"
+        # video_filter = f"framerate=fps={fps},tmix=2"
+        # video_filter = f"minterpolate='fps={fps}:mi_mode=mci:mc_mode=aobmc:me=epzs"
 
     if hw_encoder:
         cmd = [
@@ -277,6 +289,8 @@ def encode_av1(input_path, output_path, cq, probe, content_type,
             "-c:v", hw_encoder,
             "-c:a", "copy",
         ]
+        if video_filter:
+            cmd.extend(["-vf", video_filter])
         if hw_encoder == "av1_nvenc":
             cmd += ["-preset",
                     "p7",
@@ -298,15 +312,16 @@ def encode_av1(input_path, output_path, cq, probe, content_type,
         cmd = [
             "ffmpeg", "-y",
             "-i", str(input_path),
-            "-map", "0:v:0",
-            "-map", "0:a?",
+            "-map", "0:v:0", "-map", "0:a?",
             "-c:v", "libsvtav1",
             "-c:a", "copy",
             "-crf", str(cq),
             "-preset", "4",
             *color_args,
-            str(output_path)
         ]
+        if video_filter:
+            cmd.extend(["-vf", video_filter])
+        cmd.append(str(output_path))
 
     if verbose:
         enc_type = "hardware" if hw_encoder else "software"
@@ -412,7 +427,10 @@ def merge_tracks(encoded_video, original_video, output_video, verbose=False):
     return run(cmd, "Merging tracks", verbose=verbose) is not None
 
 
-def process_file(input_path, cq, hw_encoder=None, verbose=False, position=None):
+def process_file(input_path, cq, fps=None,
+                 hw_encoder=None,
+                 verbose=False,
+                 position=None):
     input_path = Path(input_path)
 
     if not input_path.exists():
@@ -438,13 +456,15 @@ def process_file(input_path, cq, hw_encoder=None, verbose=False, position=None):
         f"{input_path.stem}_temp_av1.mp4"
     )
 
+    suffix = f"_fps_{fps}" if fps else ""
+
     final_output = input_path.with_name(
-        f"{input_path.stem}_av1_cq_{chosen_cq}.mp4"
+        f"{input_path.stem}{suffix}_av1_cq_{chosen_cq}.mp4"
     )
 
     try:
-        success = encode_av1(
-            input_path, temp_av1, chosen_cq, probe, content_type,
+        success = encode_av1(input_path, temp_av1, chosen_cq, probe, content_type,
+            fps=fps,
             hw_encoder=hw_encoder,
             verbose=verbose,
             position=position
@@ -456,24 +476,6 @@ def process_file(input_path, cq, hw_encoder=None, verbose=False, position=None):
     finally:
         if temp_av1.exists():
             temp_av1.unlink()
-
-    success = merge_tracks(
-        temp_av1,
-        input_path,
-        final_output
-    )
-
-    if not success:
-        print("[!] Merge failed")
-        return False
-
-    if temp_av1.exists():
-        temp_av1.unlink()
-
-    if verbose:
-        print(f"[+] Finished: {final_output.name}")
-
-    return True
 
 
 def main():
@@ -494,6 +496,13 @@ def main():
         type=int,
         default=None,
         help="Override automatic CQ"
+    )
+
+    parser.add_argument(
+        "--fps",
+        type=float,
+        default=None,
+        help="Convert video to specified FPS using FFmpeg framerate filter"
     )
 
     parser.add_argument(
@@ -553,6 +562,7 @@ def main():
         success = process_file(
             target,
             args.cq,
+            fps=args.fps,
             hw_encoder=hw_encoder,
             verbose=args.verbose
         )
@@ -577,7 +587,7 @@ def main():
                     print(summary)
                 else:
                     tqdm.write(summary)
-        print("\n[*] Done.\n")
+        print("[*] Done.\n")
 
     elif target.is_dir():
 
@@ -613,7 +623,7 @@ def main():
             ) as overall_bar:
                 for file in files:
                     success = process_file(
-                        file, args.cq, hw_encoder=hw_encoder,
+                        file, args.cq, fps=args.fps, hw_encoder=hw_encoder,
                         verbose=False, position=1
                     )
                     if success:
@@ -633,7 +643,7 @@ def main():
             for idx, file in enumerate(files, start=1):
                 print(f"\n[{idx}/{len(files)}]")
                 success = process_file(
-                    file, args.cq, hw_encoder=hw_encoder,
+                    file, args.cq, fps=args.fps, hw_encoder=hw_encoder,
                     verbose=True
                 )
                 if success:

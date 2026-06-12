@@ -4,11 +4,12 @@ Hardware‑accelerated AV1 video encoder with automatic quality selection and fu
 
 ## Features
 
-- Automatically detects the best available hardware AV1 encoder (NVIDIA, Intel QSV, AMD AMF, VA‑API, Vulkan, MediaCodec) or falls back to efficient software encoding via `libsvtav1`.
-- Classifies videos as **HQ** (high‑quality source: 4K+, high bitrate, DJI/GoPro/Insta360/Sony camera) or **compressed** to choose an appropriate constant quality level.
-- Preserves **all metadata tracks** (GPS, telemetry, timecodes, etc.) from the original file using MP4Box.
-- Supports both single files and batch processing of directories.
-- Clear progress bars with real‑time encoding speed, bitrate, and final disk‑space savings.
+- Automatically detects the best available hardware AV1 encoder (NVIDIA, Intel QSV, AMD AMF, VA-API, Vulkan, MediaCodec) or falls back to efficient software encoding via `libsvtav1`
+- Classifies videos as **HQ** (high-quality source: 4K+, high bitrate, DJI/GoPro/Insta360/Sony camera) or **compressed** to choose an appropriate constant quality level
+- Optional frame-rate conversion using FFmpeg's `fps` filter (`--fps`)
+- Preserves **all metadata tracks** (GPS, telemetry, timecodes, etc.) from the original file using MP4Box
+- Supports both single files and batch processing of directories
+- Clear progress bars with real-time encoding speed, bitrate, and final disk-space savings
 
 ## Requirements
 
@@ -47,20 +48,19 @@ pip install tqdm
 python av1_transcoder.py <file_or_directory> [options]
 ```
 
-### Arguments
-
 | Argument         | Description                                                                 |
 |------------------|-----------------------------------------------------------------------------|
 | `path`           | Input video file or directory containing videos.                            |
 | `--cq CQ`        | Override automatic CQ value. (23 for HQ, 45 for compressed by default).     |
+| `--fps FPS`      | Convert video to the specified frame rate before encoding.                  |
 | `--software`     | Force software encoding even if a hardware encoder is available.            |
-| `--verbose`      | Show detailed per‑step output.                                              |
+| `--verbose`      | Show detailed per-step output.                                              |
 
 ## How it works
 
 1. **Probe** – ffprobe extracts stream and format metadata.
 2. **Classify** – The video is tagged as `hq` or `compressed` based on resolution, bitrate, and camera brand.
-3. **Encode** – ffmpeg encodes the video track (and copies audio) using the chosen hardware encoder or `libsvtav1`. A constant quality (CQ/CRF) value controls the output quality/size trade‑off.
+3. **Encode** – ffmpeg encodes the video track (and copies audio) using the chosen hardware encoder or `libsvtav1`. If `--fps` is specified, the video is first converted to the requested frame rate using FFmpeg's `fps` filter. A constant quality (CQ/CRF) value controls the output quality/size trade-off.
 4. **Merge** – MP4Box copies all non‑video‑audio tracks (e.g., GPS, telemetry) from the original into the new AV1 file, ensuring no metadata is lost.
 5. **Cleanup** – The intermediate file is removed, and disk savings are reported.
 
@@ -70,6 +70,16 @@ python av1_transcoder.py <file_or_directory> [options]
 - **Compressed** → CQ **45** (good compression)
 
 You can override with `--cq` if needed.
+
+### Frame rate conversion
+
+Use `--fps` to convert the video to a specific frame rate during encoding.
+
+Examples:
+
+```bash
+python av1_transcoder.py input.mp4 --fps 30
+```
 
 ### Supported hardware encoders
 
